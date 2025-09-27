@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.panorama.backend.mapper.RasterTileMapper">
+
+    <select id="getRasterDBTile" resultMap="queryBaseResultMap">
+        Select * From images
+        Where tile_id = (
+            Select tile_id
+            From map
+            Where zoom_level=#{z}
+            And tile_column=#{x}
+            And tile_row=#{y}
+        )
+    </select>
+
+    <resultMap id="queryBaseResultMap" type="com.panorama.backend.model.resource.Tile" >
+        <result column="tile_data" property="tile_data" typeHandler="com.panorama.backend.handler.BlobTypeHandler"/>
+    </resultMap>
+</mapper>

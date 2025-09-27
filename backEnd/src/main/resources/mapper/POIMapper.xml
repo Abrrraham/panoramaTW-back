@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.panorama.backend.mapper.POIMapper">
+
+    <select id="getAllPOI" resultType="com.panorama.backend.model.resource.POI">
+        SELECT * FROM poi;
+    </select>
+
+    <insert id="addPOI">
+        INSERT INTO poi (name, description, lat, lon, zoom)
+        VALUES (#{name}, #{description}, #{lat}, #{lon}, #{zoom})
+    </insert>
+
+    <delete id="deletePOI">
+        DELETE FROM poi
+        WHERE id = #{id}
+    </delete>
+
+</mapper>

@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.panorama.backend.mapper.VectorTileMapper">
+
+    <select id="getVectorTile" resultType="java.lang.Object">
+        WITH mvt_geom AS (
+            SELECT
+                ogc_fid
+                <foreach collection="visualizationFieldsList" item="field">
+                    <if test="field != null and field != ''">, ${field}</if>
+                </foreach>
+                , ST_AsMVTGeom(
+                    ST_Transform(original_table.geom, 3857),
+                    ST_TileEnvelope(#{z}, #{x}, #{y}),
+                    4096, 256, true
+                ) AS geom
+            FROM ${tableName} AS original_table
+            WHERE ST_Intersects(ST_Transform(original_table.geom, 3857), ST_TileEnvelope(#{z}, #{x}, #{y}))
+        )
+        SELECT ST_AsMVT(mvt_geom, '${tableName}', 4096, 'geom') AS mvt
+        FROM mvt_geom;
+    </select>
+
+    <select id="getDetailInfo" resultType="map">
+        SELECT
+            <foreach collection="detailFieldsList" item="field" separator=",">
+                ${field}
+            </foreach>
+        FROM
+            "${tableName}"
+        WHERE
+            ogc_fid = #{ogc_fid}
+    </select>
+
+    <insert id="insertGeoJsonFeature">
+        INSERT INTO "${tableName}"
+        (
+            <foreach collection="properties" index="key" item="value" separator=",">
+                ${key}
+            </foreach>,
+            geom
+        )
+        VALUES
+        (
+            <foreach collection="properties" index="key" item="value" separator=",">
+                <choose>
+                    <when test="value instanceof java.util.List">
+                        #{value, typeHandler=com.JS_Nearshore.backend.handler.ArrayTypeHandler}
+                    </when>
+                    <when test="value instanceof java.util.Map">
+                        #{value, typeHandler=com.JS_Nearshore.backend.handler.JsonTypeHandler}
+                    </when>
+                    <!-- 如果是基本类型，直接插入 -->
+                    <otherwise>
+                        #{value}
+                    </otherwise>
+                </choose>
+            </foreach>,
+            ST_GeomFromGeoJSON(#{geometry})
+        )
+    </insert>
+
+    <update id="createTable">
+        CREATE TABLE IF NOT EXISTS "${tableName}" (
+            id SERIAL PRIMARY KEY,
+            <foreach collection="propertyType" item="entry" index="key" separator=",">
+                ${key} ${entry}
+            </foreach>,
+            geom GEOMETRY(${type}, ${srid})
+        );
+    </update>
+
+    <delete id="deleteTable">
+        DROP TABLE IF EXISTS "${tableName}"
+    </delete>
+
+    <select id="findSRIDByWKT" resultType="int">
+        SELECT srid
+        FROM spatial_ref_sys
+        WHERE REPLACE(srtext, ' ', '') LIKE CONCAT(SUBSTRING(#{wkt}, 1, 12), '%')
+        LIMIT 1
+    </select>
+
+    <select id="getSameCount" resultType="int">
+        SELECT COUNT(*)
+        FROM information_schema.tables
+        WHERE table_name LIKE CONCAT(#{tableName}, '%')
+    </select>
+
+    <select id="getGeojsonByTableName" resultType="String">
+        SELECT json_build_object(
+        'type', 'FeatureCollection',
+        'features', json_agg(ST_AsGeoJSON(t.*)::json)
+        ) FROM ${tableName} t
+    </select>
+
+    <!-- 新增：获取所有列，不含几何 -->
+    <select id="getAllColumns" resultType="string">
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE (table_name = #{tableName} OR table_name ILIKE '%' || #{tableName} || '%')
+          AND table_schema = 'public'
+          AND column_name NOT IN ('geom')
+        ORDER BY ordinal_position
+    </select>
+
+    <!-- 新增：分页获取属性数据（限定列名） -->
+    <select id="getAttributes" resultType="map">
+        SELECT
+        <foreach collection="columnsList" item="col" separator=",">
+            ${col}
+        </foreach>
+        FROM "${tableName}"
+        ORDER BY ogc_fid
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <!-- 新增：统计总行数 -->
+    <select id="getRowCount" resultType="int">
+        SELECT COUNT(*) FROM "${tableName}"
+    </select>
+
+</mapper>
