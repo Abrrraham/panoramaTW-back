@@ -8,7 +8,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
 
@@ -42,6 +48,7 @@ public class LayerNodeController {
     }
 
     @PostMapping("/createCategory")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<GeneralResult> createCategory(@RequestBody InfoDTO info) throws IOException {
         GeneralResult result = layerNodeService.createCategory(info);
         HttpHeaders headers = new HttpHeaders();
@@ -60,6 +67,7 @@ public class LayerNodeController {
 //    }
 
     @PutMapping("/updateCategory")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<GeneralResult> updateCategory(@RequestBody InfoDTO info) throws IOException {
         GeneralResult result = layerNodeService.updateCategory(info);
         HttpHeaders headers = new HttpHeaders();

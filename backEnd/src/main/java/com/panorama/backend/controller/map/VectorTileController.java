@@ -12,7 +12,17 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestPart;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -129,6 +139,7 @@ public class VectorTileController {
     }
 
     @PostMapping("/upload/json")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<GeneralResult> uploadVectorLayer(@RequestPart("file") MultipartFile file, @RequestPart("info") InfoDTO info) throws IOException {
         LayerNode parentNode = layerNodeService.getLayerNodeById(info.getParent_id());
         GeneralResult result = vectorTileService.uploadJSONLayer(parentNode, file, info);
@@ -139,6 +150,7 @@ public class VectorTileController {
     }
 
     @PostMapping("/upload/shp/parse")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<GeneralResult> parseShpLayer(@RequestParam("file") MultipartFile file) throws IOException {
         GeneralResult result = vectorTileService.parseShpLayer(file);
         HttpHeaders headers = new HttpHeaders();
@@ -148,6 +160,7 @@ public class VectorTileController {
     }
 
     @PostMapping("/upload/shp/store")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<GeneralResult> storeShpLayer(@RequestPart("path") String path, @RequestPart("info") InfoDTO info) throws IOException, InterruptedException, FactoryException {
         LayerNode parentNode = layerNodeService.getLayerNodeById(info.getParent_id());
         GeneralResult result = vectorTileService.storeShpLayer(parentNode, path, info);
@@ -158,6 +171,7 @@ public class VectorTileController {
     }
 
     @DeleteMapping("/delete/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<GeneralResult> deleteVectorLayer(@PathVariable String id) throws JsonProcessingException {
         LayerNode layerNode = layerNodeService.getLayerNodeById(id);
         GeneralResult result = vectorTileService.deleteVectorLayer(layerNode);
@@ -168,6 +182,7 @@ public class VectorTileController {
     }
 
     @PutMapping("/update")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<GeneralResult> updateVectorLayer(@RequestBody InfoDTO info) throws IOException {
         LayerNode layerNode = layerNodeService.getLayerNodeById(info.getId());
         GeneralResult result = vectorTileService.updateVectorLayer(layerNode, info);

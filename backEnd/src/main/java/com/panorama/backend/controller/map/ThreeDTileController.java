@@ -11,7 +11,16 @@ import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestPart;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.File;
@@ -86,6 +95,7 @@ public class ThreeDTileController {
     }
 
     @PutMapping("/update")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<GeneralResult> update3DLayer(@RequestBody InfoDTO info) {
         LayerNode layerNode = layerNodeService.getLayerNodeById(info.getId());
         GeneralResult result = threeDTileService.update3DTileLayer(layerNode, info);
@@ -96,6 +106,7 @@ public class ThreeDTileController {
     }
 
     @DeleteMapping("/delete/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<GeneralResult> delete3DLayer(@PathVariable String id) {
         LayerNode layerNode = layerNodeService.getLayerNodeById(id);
         GeneralResult result = threeDTileService.delete3DTileLayer(layerNode);
@@ -106,6 +117,7 @@ public class ThreeDTileController {
     }
 
     @PostMapping("/upload")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<GeneralResult> upload3DLayer(@RequestPart("file") MultipartFile file, @RequestPart("info") InfoDTO info) {
         LayerNode parentNode = layerNodeService.getLayerNodeById(info.getParent_id());
         GeneralResult result = threeDTileService.upload3DTileLayer(parentNode, file, info);

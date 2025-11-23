@@ -7,7 +7,15 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 /**
@@ -40,6 +48,7 @@ public class ShapeFileController {
      * @return 上传结果
      */
     @PostMapping("/upload")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<GeneralResult> uploadShapeFile(
             @RequestPart("file") MultipartFile file, 
             @RequestPart("info") InfoDTO info) {
@@ -60,6 +69,7 @@ public class ShapeFileController {
      * @return 上传结果
      */
     @PostMapping("/upload-simple")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<GeneralResult> uploadShapeFileSimple(@RequestParam("file") MultipartFile file) {
         // 创建默认的图层信息
         InfoDTO defaultInfo = new InfoDTO();
@@ -110,6 +120,7 @@ public class ShapeFileController {
      * @return 验证结果
      */
     @PostMapping("/validate")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<GeneralResult> validateShapeFile(@RequestPart("file") MultipartFile file) {
         GeneralResult result = shapeFileService.validateShapeFile(file);
         HttpHeaders headers = new HttpHeaders();
@@ -127,6 +138,7 @@ public class ShapeFileController {
      * @return 预览信息
      */
     @PostMapping("/preview")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<GeneralResult> previewShapeFile(@RequestPart("file") MultipartFile file) {
         GeneralResult result = shapeFileService.previewShapeFile(file);
         HttpHeaders headers = new HttpHeaders();
@@ -143,6 +155,7 @@ public class ShapeFileController {
      * @return 删除结果
      */
     @DeleteMapping("/delete/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<GeneralResult> deleteShapeFileLayer(@PathVariable String id) {
         GeneralResult result = shapeFileService.deleteShapeFileLayer(id);
         HttpHeaders headers = new HttpHeaders();
