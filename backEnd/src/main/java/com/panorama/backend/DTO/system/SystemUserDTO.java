@@ -8,6 +8,7 @@ import java.util.List;
 @Data
 @Builder
 public class SystemUserDTO {
+    private String mongoId;
     private long id;
     private String createBy;
     private String createTime;
@@ -20,4 +21,6 @@ public class SystemUserDTO {
     private String userPhone;
     private String userEmail;
     private List<String> userRoles;
+    /** expose plain if stored, otherwise hashed */
+    private String password;
 }
