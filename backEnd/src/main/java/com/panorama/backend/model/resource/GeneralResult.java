@@ -12,6 +12,7 @@ import lombok.Data;
 @Data
 @Builder
 public class GeneralResult {
+    private String code;
     private String status;
     private Object message;
     private Object data;

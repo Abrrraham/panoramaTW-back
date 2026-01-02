@@ -23,6 +23,9 @@ import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
 
 /**
@@ -50,8 +53,14 @@ public class RasterTileController {
             @PathVariable int z, @PathVariable int x, @PathVariable int y) throws Exception {
 
         LayerNode layerNode = layerNodeService.getLayerNodeById(id);
+        if (layerNode == null) {
+            return emptyTile();
+        }
 
-        String type = layerNode.getUsage().get("type");
+        String type = "land_gdal";
+        if (layerNode.getUsage() != null && layerNode.getUsage().get("type") != null) {
+            type = layerNode.getUsage().get("type");
+        }
 
         switch (type) {
             case "land", "water", "land_gdal" -> {
@@ -63,7 +72,7 @@ public class RasterTileController {
                     headers.add("Cache-Control", "no-cache, no-store, must-revalidate");
                     return ResponseEntity.ok().header(String.valueOf(headers)).contentType(MediaType.IMAGE_PNG).body(fileSystemResource);
                 } else {
-                    return ResponseEntity.noContent().build();
+                    return emptyTile();
                 }
             }
             case "bundle" -> {
@@ -75,7 +84,7 @@ public class RasterTileController {
                     headers.setContentLength(imageBytes.length);
                     return new ResponseEntity<>(imageBytes, headers, HttpStatus.OK);
                 } else {
-                    return ResponseEntity.noContent().build();
+                    return emptyTile();
                 }
             }
             case "base" -> {
@@ -83,8 +92,23 @@ public class RasterTileController {
                 return ResponseEntity.ok().header(HttpHeaders.CONTENT_TYPE, "image/png").body(tileData.array());
             }
             default -> {
-                return ResponseEntity.noContent().build();
+                return emptyTile();
             }
+        }
+    }
+
+    private ResponseEntity<byte[]> emptyTile() {
+        try {
+            BufferedImage image = new BufferedImage(256, 256, BufferedImage.TYPE_INT_ARGB);
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            ImageIO.write(image, "png", baos);
+            byte[] bytes = baos.toByteArray();
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.IMAGE_PNG);
+            headers.setContentLength(bytes.length);
+            return new ResponseEntity<>(bytes, headers, HttpStatus.OK);
+        } catch (Exception e) {
+            return ResponseEntity.ok(new byte[0]);
         }
     }
 

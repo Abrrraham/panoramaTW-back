@@ -53,10 +53,16 @@ public class VectorTileController {
             @PathVariable String id,@PathVariable int z, @PathVariable int x, @PathVariable int y) {
 
         LayerNode layerNode = layerNodeService.getLayerNodeById(id);
+        if (layerNode == null) {
+            return ResponseEntity.ok()
+                    .contentType(MediaType.valueOf("application/vnd.mapbox-vector-tile"))
+                    .contentLength(0)
+                    .body(new byte[0]);
+        }
 
         byte[] tileData = vectorTileService.getVectorTile(layerNode, z, x, y);
-        if (tileData == null || tileData.length == 0) {
-            return ResponseEntity.noContent().build();
+        if (tileData == null) {
+            tileData = new byte[0];
         }
         HttpHeaders headers = new HttpHeaders();
         return ResponseEntity.ok()

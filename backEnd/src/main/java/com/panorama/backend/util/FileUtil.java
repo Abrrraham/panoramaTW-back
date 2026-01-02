@@ -53,16 +53,59 @@ public class FileUtil {
         }
     }
 
+    public static String sanitizeFileName(String originalFilename) {
+        if (originalFilename == null) {
+            return "upload.bin";
+        }
+        String name = originalFilename.replace("\\", "/");
+        name = name.substring(name.lastIndexOf('/') + 1);
+        name = name.replaceAll("[^a-zA-Z0-9._-]", "_");
+        if (name.isBlank()) {
+            return "upload.bin";
+        }
+        return name;
+    }
+
+    public static String sanitizeTableName(String name) {
+        if (name == null) {
+            return "";
+        }
+        String cleaned = name.replaceAll("[^a-zA-Z0-9_]", "_").toLowerCase();
+        if (cleaned.isBlank()) {
+            return "";
+        }
+        return cleaned;
+    }
+
+    public static boolean hasAllowedExtension(String filename, String[] allowed) {
+        if (filename == null || allowed == null) {
+            return false;
+        }
+        String lower = filename.toLowerCase();
+        for (String ext : allowed) {
+            if (lower.endsWith("." + ext.toLowerCase())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public static synchronized File convertMultipartFileToFile(MultipartFile multipartFile, String temp) throws IOException {
 
         String originalFilename = multipartFile.getOriginalFilename();
-        assert originalFilename != null;
+        String safeFileName = sanitizeFileName(originalFilename);
         
         // 首先确保基础temp目录存在
         ensureDirectoryExists(temp);
         
         // 生成安全的目录名，避免中文字符问题和并发冲突
-        String baseName = originalFilename.substring(0, originalFilename.lastIndexOf('.'));
+        String baseName;
+        int dotIndex = safeFileName.lastIndexOf('.');
+        if (dotIndex > 0) {
+            baseName = safeFileName.substring(0, dotIndex);
+        } else {
+            baseName = safeFileName;
+        }
         // 使用时间戳+UUID+线程ID确保绝对唯一性
         String uniqueId = System.currentTimeMillis() + "_" + 
                          Thread.currentThread().getId() + "_" + 
@@ -97,7 +140,7 @@ public class FileUtil {
             }
         }
 
-        File file = new File(path + File.separator + originalFilename);
+        File file = new File(path + File.separator + safeFileName);
 
         // 将 multipartFile 的内容转存到 file 中
         try {
@@ -126,60 +169,47 @@ public class FileUtil {
     public static List<String> unZipFiles(File srcFile, String destDirPath) throws RuntimeException {
         List<String> list = new ArrayList<>();
         long start = System.currentTimeMillis();
-        // 判断源文件是否存在
         if (!srcFile.exists()) {
-            throw new RuntimeException(srcFile.getPath() + "所指文件不存在");
+            throw new RuntimeException(srcFile.getPath() + " file not found");
         }
-        // 开始解压
         ZipFile zipFile = null;
         try {
+            Path destDir = Paths.get(destDirPath).toAbsolutePath().normalize();
             zipFile = new ZipFile(srcFile, Charset.forName("GBK"));
             Enumeration<?> entries = zipFile.entries();
             while (entries.hasMoreElements()) {
                 ZipEntry entry = (ZipEntry) entries.nextElement();
-                log.info("解压{}", entry.getName());
-                // 如果是文件夹，就创建个文件夹
+                Path targetPath = destDir.resolve(entry.getName()).normalize();
+                if (!targetPath.startsWith(destDir)) {
+                    throw new RuntimeException("zip slip detected: " + entry.getName());
+                }
                 if (entry.isDirectory()) {
-                    String dirPath = destDirPath + File.separator + entry.getName();
-                    File dir = new File(dirPath);
-                    dir.mkdirs();
-                } else {
-                    // 如果是文件，就先创建一个文件，然后用io流把内容copy过去
-                    File targetFile = new File(destDirPath + File.separator + entry.getName());
-                    // 保证这个文件的父文件夹必须要存在
-                    log.info("{}{}{}", destDirPath, File.separator, entry.getName());
-                    list.add(destDirPath + File.separator + entry.getName());
-                    if (!targetFile.getParentFile().exists()) {
-                        boolean parentCreated = targetFile.getParentFile().mkdirs();
-                        if (!parentCreated) {
-                            throw new RuntimeException("Failed to create parent directory: " + targetFile.getParentFile().getAbsolutePath());
-                        }
-                        log.info("Created parent directory: {}", targetFile.getParentFile().getAbsolutePath());
-                    }
-                    targetFile.createNewFile();
-                    // 将压缩文件内容写入到这个文件中
-                    InputStream is = zipFile.getInputStream(entry);
-                    FileOutputStream fos = new FileOutputStream(targetFile);
-                    int len;
+                    Files.createDirectories(targetPath);
+                    continue;
+                }
+                if (targetPath.getParent() != null) {
+                    Files.createDirectories(targetPath.getParent());
+                }
+                try (InputStream is = zipFile.getInputStream(entry);
+                     FileOutputStream fos = new FileOutputStream(targetPath.toFile())) {
                     byte[] buf = new byte[1024];
+                    int len;
                     while ((len = is.read(buf)) != -1) {
                         fos.write(buf, 0, len);
                     }
-                    // 关流顺序，先打开的后关闭
-                    fos.close();
-                    is.close();
                 }
+                list.add(targetPath.toString());
             }
             long end = System.currentTimeMillis();
-            log.info("解压完成，耗时：{} ms", end - start);
+            log.info("unzip complete, cost: {} ms", end - start);
         } catch (Exception e) {
-            throw new RuntimeException("unzip error from ZipUtils", e);
+            throw new RuntimeException("unzip error", e);
         } finally {
             if (zipFile != null) {
                 try {
                     zipFile.close();
                 } catch (IOException e) {
-                    e.printStackTrace();
+                    log.warn("zip close failed: {}", e.getMessage());
                 }
             }
         }
@@ -197,6 +227,21 @@ public class FileUtil {
         return fileName;
     }
 
+    public static String findFileWithExtensionIgnoreCase(List<String> list, String... extensions) {
+        if (list == null || extensions == null) {
+            return "";
+        }
+        for (String file : list) {
+            String lower = file.toLowerCase();
+            for (String ext : extensions) {
+                if (lower.endsWith(ext.toLowerCase())) {
+                    return file;
+                }
+            }
+        }
+        return "";
+    }
+
     public static String findFileWithExtension(String directoryPath, String extension) {
         Path dirPath = Paths.get(directoryPath);
 
@@ -209,6 +254,29 @@ public class FileUtil {
                     .orElse(null); // 如果没有找到，则返回 null
         } catch (IOException e) {
             System.err.println("访问目录时出错: " + e.getMessage());
+            return null;
+        }
+    }
+
+    public static String findFileWithExtensionIgnoreCase(String directoryPath, String... extensions) {
+        Path dirPath = Paths.get(directoryPath);
+        try {
+            return Files.walk(dirPath, 1)
+                    .filter(path -> Files.isRegularFile(path))
+                    .map(Path::toString)
+                    .filter(path -> {
+                        String lower = path.toLowerCase();
+                        for (String ext : extensions) {
+                            if (lower.endsWith(ext.toLowerCase())) {
+                                return true;
+                            }
+                        }
+                        return false;
+                    })
+                    .findFirst()
+                    .orElse(null);
+        } catch (IOException e) {
+            System.err.println("Failed to access directory: " + e.getMessage());
             return null;
         }
     }
@@ -276,9 +344,8 @@ public class FileUtil {
         // 遍历文件并统计匹配的文件名
         try (Stream<Path> files = Files.list(dir)) {
             return files
-                    .filter(Files::isRegularFile)  // 只过滤出文件（不包括子目录）
-                    .filter(path -> path.getFileName().toString().startsWith(prefix)) // 过滤文件名以 prefix 开头的文件
-                    .count();  // 统计数量
+                    .filter(path -> path.getFileName().toString().startsWith(prefix))
+                    .count();
         }
     }
 

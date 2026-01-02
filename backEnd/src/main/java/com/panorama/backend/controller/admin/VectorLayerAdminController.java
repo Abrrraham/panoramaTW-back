@@ -33,6 +33,13 @@ public class VectorLayerAdminController {
     public ResponseEntity<GeneralResult> uploadVectorLayer(@RequestPart("file") MultipartFile file,
                                                            @RequestPart("info") InfoDTO info) throws IOException {
         LayerNode parentNode = layerNodeService.getLayerNodeById(info.getParent_id());
+        if (parentNode == null) {
+            return ResponseEntity.ok(GeneralResult.builder()
+                    .code("PARENT_NOT_FOUND")
+                    .status("error")
+                    .message("parent node not found")
+                    .build());
+        }
         return ResponseEntity.ok(vectorTileService.uploadJSONLayer(parentNode, file, info));
     }
 
@@ -40,11 +47,31 @@ public class VectorLayerAdminController {
     public ResponseEntity<GeneralResult> uploadShape(@RequestPart("file") MultipartFile file,
                                                      @RequestPart("info") InfoDTO info) throws IOException, InterruptedException, FactoryException {
         LayerNode parentNode = layerNodeService.getLayerNodeById(info.getParent_id());
+        if (parentNode == null) {
+            return ResponseEntity.ok(GeneralResult.builder()
+                    .code("PARENT_NOT_FOUND")
+                    .status("error")
+                    .message("parent node not found")
+                    .build());
+        }
         GeneralResult parseResult = vectorTileService.parseShpLayer(file);
         if (!"success".equalsIgnoreCase(parseResult.getStatus())) {
             return ResponseEntity.ok(parseResult);
         }
-        return ResponseEntity.ok(vectorTileService.storeShpLayer(parentNode, (String) parseResult.getMessage(), info));
+        Object message = parseResult.getMessage();
+        String path = null;
+        if (message instanceof String) {
+            path = (String) message;
+        } else if (message instanceof java.util.Map<?, ?> msgMap) {
+            Object pathObj = msgMap.get("path");
+            if (pathObj != null) {
+                path = pathObj.toString();
+            }
+        }
+        if (path == null || path.isEmpty()) {
+            return ResponseEntity.ok(GeneralResult.builder().status("error").message("failed to parse shp path").build());
+        }
+        return ResponseEntity.ok(vectorTileService.storeShpLayer(parentNode, path, info));
     }
 
     @DeleteMapping("/layer/{id}")

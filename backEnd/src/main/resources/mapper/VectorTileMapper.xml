@@ -16,7 +16,7 @@
                     ST_TileEnvelope(#{z}, #{x}, #{y}),
                     4096, 256, true
                 ) AS geom
-            FROM ${tableName} AS original_table
+            FROM "${tableName}" AS original_table
             WHERE ST_Intersects(ST_Transform(original_table.geom, 3857), ST_TileEnvelope(#{z}, #{x}, #{y}))
         )
         SELECT ST_AsMVT(mvt_geom, '${tableName}', 4096, 'geom') AS mvt
@@ -37,37 +37,44 @@
     <insert id="insertGeoJsonFeature">
         INSERT INTO "${tableName}"
         (
-            <foreach collection="properties" index="key" item="value" separator=",">
-                ${key}
-            </foreach>,
+            <if test="properties != null and properties.size() > 0">
+                <foreach collection="properties" index="key" item="value" separator=",">
+                    ${key}
+                </foreach>,
+            </if>
             geom
         )
         VALUES
         (
-            <foreach collection="properties" index="key" item="value" separator=",">
-                <choose>
-                    <when test="value instanceof java.util.List">
-                        #{value, typeHandler=com.JS_Nearshore.backend.handler.ArrayTypeHandler}
-                    </when>
-                    <when test="value instanceof java.util.Map">
-                        #{value, typeHandler=com.JS_Nearshore.backend.handler.JsonTypeHandler}
-                    </when>
-                    <!-- 如果是基本类型，直接插入 -->
-                    <otherwise>
-                        #{value}
-                    </otherwise>
-                </choose>
-            </foreach>,
-            ST_GeomFromGeoJSON(#{geometry})
+            <if test="properties != null and properties.size() > 0">
+                <foreach collection="properties" index="key" item="value" separator=",">
+                    <choose>
+                        <when test="value instanceof java.util.List">
+                            #{value, typeHandler=com.JS_Nearshore.backend.handler.ArrayTypeHandler}
+                        </when>
+                        <when test="value instanceof java.util.Map">
+                            #{value, typeHandler=com.JS_Nearshore.backend.handler.JsonTypeHandler}
+                        </when>
+                        <otherwise>
+                            #{value}
+                        </otherwise>
+                    </choose>
+                </foreach>,
+            </if>
+            ST_SetSRID(ST_GeomFromGeoJSON(#{geometry}), #{srid})
         )
     </insert>
 
     <update id="createTable">
         CREATE TABLE IF NOT EXISTS "${tableName}" (
-            id SERIAL PRIMARY KEY,
-            <foreach collection="propertyType" item="entry" index="key" separator=",">
-                ${key} ${entry}
-            </foreach>,
+            ogc_fid SERIAL PRIMARY KEY
+            <if test="propertyType != null and propertyType.size() > 0">
+                ,
+                <foreach collection="propertyType" item="entry" index="key" separator=",">
+                    ${key} ${entry}
+                </foreach>
+            </if>
+            ,
             geom GEOMETRY(${type}, ${srid})
         );
     </update>
@@ -89,12 +96,38 @@
         WHERE table_name LIKE CONCAT(#{tableName}, '%')
     </select>
 
+    <select id="hasPostgis" resultType="boolean">
+        SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'postgis')
+    </select>
+
+    <select id="getLayerBBox" resultType="String">
+        SELECT ST_Extent(ST_Transform(geom, #{srid})) FROM "${tableName}"
+    </select>
+
     <select id="getGeojsonByTableName" resultType="String">
         SELECT json_build_object(
         'type', 'FeatureCollection',
         'features', json_agg(ST_AsGeoJSON(t.*)::json)
-        ) FROM ${tableName} t
+        ) FROM "${tableName}" t
     </select>
+
+    <select id="hasColumn" resultType="boolean">
+        SELECT EXISTS (
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = #{tableName}
+              AND column_name = #{columnName}
+        )
+    </select>
+
+    <update id="renameGidToOgcFid">
+        ALTER TABLE "${tableName}" RENAME COLUMN gid TO ogc_fid
+    </update>
+
+    <update id="renameIdToOgcFid">
+        ALTER TABLE "${tableName}" RENAME COLUMN id TO ogc_fid
+    </update>
 
     <!-- 新增：获取所有列，不含几何 -->
     <select id="getAllColumns" resultType="string">

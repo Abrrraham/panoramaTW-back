@@ -34,4 +34,10 @@ public class LayerNode {
     private String layerName;
 
     private Map<String, String> usage;
+
+    private Long createdAt;
+
+    private Long updatedAt;
+
+    private String createdBy;
 }

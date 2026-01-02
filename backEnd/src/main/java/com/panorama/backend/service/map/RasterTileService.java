@@ -4,6 +4,7 @@ import com.panorama.backend.DTO.InfoDTO;
 import com.panorama.backend.annotation.DynamicNodeData;
 import com.panorama.backend.mapper.RasterTileMapper;
 import com.panorama.backend.model.Constant.GenerateResultStatus;
+import com.panorama.backend.model.Constant.LayerStatus;
 import com.panorama.backend.model.Constant.TaskStatus;
 import com.panorama.backend.model.Constant.TaskType;
 import com.panorama.backend.model.node.LayerNode;
@@ -32,6 +33,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.File;
 import java.nio.ByteBuffer;
+import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -66,6 +68,7 @@ public class RasterTileService {
     private static final int TILE_SIZE = 256;
     private static final double DEG_TO_RAD = Math.PI / 180.0;
     private static final double RAD_TO_DEG = 180.0 / Math.PI;
+    private static final long MAX_UPLOAD_BYTES = 1024L * 1024L * 1024L;
 
     @Autowired
     public void setRasterTileService(LayerNodeService layerNodeService, AsyncTaskService asyncTaskService, ModelNodeService modelNodeService, TaskNodeService taskNodeService, RasterTileMapper rasterTileMapper) {
@@ -84,7 +87,8 @@ public class RasterTileService {
         if (layerNode.getDataSource().containsKey("username")){
             return null;
         }else {
-            String type = layerNode.getUsage().get("type");
+            Map<String, String> usage = layerNode.getUsage() == null ? new HashMap<>() : layerNode.getUsage();
+            String type = usage.getOrDefault("type", "land_gdal");
             if (type.equals("land_gdal")){
                 int y_new = (int) (Math.pow(2, z) - 1.0 - y);
                 specific_rasterTile_path = String.join(File.separator, url, layerNode.getTableName(), String.valueOf(z), String.valueOf(x), y_new + ".png");
@@ -153,32 +157,79 @@ public class RasterTileService {
 
     public GeneralResult uploadRasterLayer(LayerNode parentNode, MultipartFile multipartFile, InfoDTO infoDTO) {
         try {
-            //M2F
-            File zipFile = FileUtil.convertMultipartFileToFile(multipartFile, temp);
-            String path = zipFile.getParent();
-            //解压
-            List<String> list = FileUtil.unZipFiles(zipFile, path);
-            boolean result = zipFile.delete();
-            if (!result){
-                log.error("failed to delete zip file");
+            if (parentNode == null) {
+                return GeneralResult.builder()
+                        .code("PARENT_NOT_FOUND")
+                        .status(GenerateResultStatus.ERROR)
+                        .message("parent node not found")
+                        .build();
             }
-            //找到tif文件
-            String tifPath = FileUtil.findFileWithExtension(list, ".tif");
-            if (tifPath.isEmpty()){
-                return GeneralResult.builder().status("error").message("tif not found").build();
-            }else {
+            String originalName = multipartFile.getOriginalFilename();
+            if (!FileUtil.hasAllowedExtension(originalName, new String[]{"zip", "tif", "tiff"})) {
+                return GeneralResult.builder()
+                        .code("INVALID_EXTENSION")
+                        .status(GenerateResultStatus.ERROR)
+                        .message("only .zip/.tif/.tiff is allowed for raster upload")
+                        .build();
+            }
+            if (multipartFile.getSize() > MAX_UPLOAD_BYTES) {
+                return GeneralResult.builder()
+                        .code("FILE_TOO_LARGE")
+                        .status(GenerateResultStatus.ERROR)
+                        .message("file too large")
+                        .build();
+            }
+            if (infoDTO.getLayerName() == null || infoDTO.getLayerName().isBlank()) {
+                return GeneralResult.builder()
+                        .code("INVALID_LAYER_NAME")
+                        .status(GenerateResultStatus.ERROR)
+                        .message("layer name required")
+                        .build();
+            }
+            File uploadFile = FileUtil.convertMultipartFileToFile(multipartFile, temp);
+            String path = uploadFile.getParent();
+            String tifPath;
+            String lowerName = originalName == null ? "" : originalName.toLowerCase();
+            if (lowerName.endsWith(".zip")) {
+                List<String> list = FileUtil.unZipFiles(uploadFile, path);
+                boolean result = uploadFile.delete();
+                if (!result) {
+                    log.error("failed to delete zip file");
+                }
+                tifPath = FileUtil.findFileWithExtensionIgnoreCase(list, ".tif", ".tiff");
+            } else {
+                tifPath = uploadFile.getAbsolutePath();
+            }
+            if (tifPath.isEmpty()) {
+                return GeneralResult.builder()
+                        .code("TIF_NOT_FOUND")
+                        .status(GenerateResultStatus.ERROR)
+                        .message("tif not found")
+                        .build();
+            } else {
                 ModelNode modelNode = modelNodeService.getModelNodeByName("tif2Tile");
 
                 Map<String, String> params = new HashMap<>();
-                String minZoom = infoDTO.getUsage().get("minZoom");
-                String maxZoom = infoDTO.getUsage().get("maxZoom");
+                Map<String, String> usage = infoDTO.getUsage() == null ? new HashMap<>() : new HashMap<>(infoDTO.getUsage());
+                String minZoom = usage.getOrDefault("minZoom", "0");
+                String maxZoom = usage.getOrDefault("maxZoom", "18");
+                String size = usage.getOrDefault("size", "256");
+                String tileType = usage.getOrDefault("type", "land_gdal");
 
-                String tableName = infoDTO.getTableName();
+                String tableName = FileUtil.sanitizeTableName(infoDTO.getTableName());
+                if (tableName.isBlank()) {
+                    return GeneralResult.builder()
+                            .code("INVALID_TABLE")
+                            .status(GenerateResultStatus.ERROR)
+                            .message("table name required")
+                            .build();
+                }
+                FileUtil.ensureDirectoryExists(rasterTilePath);
                 long sameCount = FileUtil.countFilesWithPrefix(rasterTilePath, tableName);
                 String uniqueTableName;
-                if (sameCount == 0){
+                if (sameCount == 0) {
                     uniqueTableName = tableName;
-                }else {
+                } else {
                     uniqueTableName = tableName + "_" + sameCount;
                 }
 
@@ -186,16 +237,30 @@ public class RasterTileService {
                 params.put("zoom", minZoom + "-" + maxZoom);
                 params.put("tifPath", tifPath);
                 params.put("outputPath", outputPath);
-                params.put("size", infoDTO.getUsage().get("size"));
+                params.put("size", size);
+                params.put("tileType", tileType);
 
                 Map<String, String> dataSourceMap = new HashMap<>();
                 dataSourceMap.put("url", rasterTilePath);
-                //创建LayerNode但暂不保存
+                usage.put("category", "raster");
+                usage.put("format", "tif");
+                usage.put("status", LayerStatus.RUNNING);
+                usage.put("dataRef", outputPath);
+                usage.put("minZoom", minZoom);
+                usage.put("maxZoom", maxZoom);
+                usage.put("size", size);
+                usage.put("type", tileType);
+                usage.put("errorMessage", "");
+
                 LayerNode layerNode = LayerNode.builder()
                         .tableName(uniqueTableName).layerName(infoDTO.getLayerName())
-                        .category("raster").usage(infoDTO.getUsage())
+                        .category("raster").usage(usage)
                         .path(layerNodeService.getNodePath(parentNode)).dataSource(dataSourceMap)
+                        .createdAt(System.currentTimeMillis())
+                        .updatedAt(System.currentTimeMillis())
                         .build();
+
+                layerNodeService.saveLayerNode(layerNode);
 
                 TaskNode taskNode = TaskNode.builder().status(TaskStatus.NONE).params(params).modelNode(modelNode)
                         .layerNode(layerNode).tempPath(path).type(TaskType.UPLOAD).build();
@@ -203,10 +268,45 @@ public class RasterTileService {
 
                 asyncTaskService.modelTaskAsync(taskNodeId);
 
-                return GeneralResult.builder().status(GenerateResultStatus.RUNNING).message(taskNodeId).build();
+                return GeneralResult.builder()
+                        .status(GenerateResultStatus.RUNNING)
+                        .message(taskNodeId)
+                        .data(Map.of("layerNodeId", layerNode.getId()))
+                        .build();
             }
         } catch (Exception e) {
-            return GeneralResult.builder().status(GenerateResultStatus.ERROR).message("failed to upload raster layer").build();
+            return GeneralResult.builder()
+                    .code("RASTER_UPLOAD_FAILED")
+                    .status(GenerateResultStatus.ERROR)
+                    .message("failed to upload raster layer")
+                    .data(e.getMessage())
+                    .build();
+        }
+    }
+
+    public GeneralResult deleteRasterLayerSync(LayerNode layerNode) {
+        try {
+            String url = layerNode.getDataSource().get("url");
+            if (layerNode.getDataSource().containsKey("username")) {
+                String dbFilePath = url.split(":")[2];
+                FileUtil.deleteDirectory(Path.of(dbFilePath));
+            } else {
+                String tableName = layerNode.getTableName();
+                String rasterPath = String.join(File.separator, url, tableName);
+                FileUtil.deleteDirectory(Path.of(rasterPath));
+            }
+            layerNodeService.deleteLayerNode(layerNode);
+            return GeneralResult.builder()
+                    .status(GenerateResultStatus.SUCCESS)
+                    .message("delete raster layer successfully")
+                    .build();
+        } catch (Exception e) {
+            return GeneralResult.builder()
+                    .code("RASTER_DELETE_FAILED")
+                    .status(GenerateResultStatus.ERROR)
+                    .message("failed to delete raster layer")
+                    .data(e.getMessage())
+                    .build();
         }
     }
 

@@ -29,6 +29,13 @@ public class RasterLayerAdminController {
     public ResponseEntity<GeneralResult> upload(@RequestPart("file") MultipartFile file,
                                                 @RequestPart("info") InfoDTO info) {
         LayerNode parentNode = layerNodeService.getLayerNodeById(info.getParent_id());
+        if (parentNode == null) {
+            return ResponseEntity.ok(GeneralResult.builder()
+                    .code("PARENT_NOT_FOUND")
+                    .status("error")
+                    .message("parent node not found")
+                    .build());
+        }
         return ResponseEntity.ok(rasterTileService.uploadRasterLayer(parentNode, file, info));
     }
 

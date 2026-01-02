@@ -43,7 +43,8 @@ public class LayerNodeService {
     }
 
     public String getNodePath(LayerNode layerNode){
-        return layerNode.getPath() + layerNode.getTableName() + ",";
+        String basePath = layerNode.getPath() == null ? "" : layerNode.getPath();
+        return basePath + layerNode.getTableName() + ",";
     }
 
     private List<LayerNode> getChildren(LayerNode layerNode){
@@ -52,15 +53,32 @@ public class LayerNodeService {
 
     public LayerNodeDTO getLayerTree(){
         LayerNode rootNode = layerNodeRepo.findLayerNodeByTableName("layerNode");
+        if (rootNode == null) {
+            LayerNode created = LayerNode.builder()
+                    .tableName("layerNode")
+                    .layerName("layerNode")
+                    .category("root")
+                    .path("")
+                    .createdAt(System.currentTimeMillis())
+                    .updatedAt(System.currentTimeMillis())
+                    .build();
+            saveLayerNode(created);
+            rootNode = created;
+        }
         return buildTree(rootNode);
     }
 
     private LayerNodeDTO buildTree(LayerNode layerNode){
+        Map<String, String> usage = layerNode.getUsage();
+        if (usage != null && !usage.containsKey("status")) {
+            usage = new java.util.HashMap<>(usage);
+            usage.put("status", com.panorama.backend.model.Constant.LayerStatus.READY);
+        }
         LayerNodeDTO layerNodeDTO = LayerNodeDTO.builder()
                 .tableName(layerNode.getTableName())
                 .layerName(layerNode.getLayerName())
                 .category(layerNode.getCategory())
-                .usage(layerNode.getUsage()).id(layerNode.getId())
+                .usage(usage).id(layerNode.getId())
                 .build();
         List<LayerNode> children = layerNodeRepo.findLayerNodesByPath(getNodePath(layerNode));
 
@@ -77,6 +95,8 @@ public class LayerNodeService {
             LayerNode newLayerNode = LayerNode.builder()
                     .tableName(infoDTO.getTableName()).layerName(infoDTO.getLayerName())
                     .path(getNodePath(parentNode))
+                    .createdAt(System.currentTimeMillis())
+                    .updatedAt(System.currentTimeMillis())
                     .build();
             saveLayerNode(newLayerNode);
             return GeneralResult.builder().status("success").message("create category successfully").build();
@@ -111,6 +131,7 @@ public class LayerNodeService {
                 layerNodeRepo.save(child);
             }
 
+            layerNode.setUpdatedAt(System.currentTimeMillis());
             layerNodeRepo.save(layerNode);
             return GeneralResult.builder().status("success").message("update category successfully").build();
         }catch (Exception e){
@@ -133,6 +154,7 @@ public class LayerNodeService {
             if (usage != null){
                 layerNode.setUsage(usage);
             }
+            layerNode.setUpdatedAt(System.currentTimeMillis());
             saveLayerNode(layerNode);
             return true;
         }catch (Exception e){

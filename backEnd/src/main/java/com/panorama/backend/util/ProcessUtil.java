@@ -4,11 +4,15 @@ import com.panorama.backend.model.node.ModelNode;
 import com.panorama.backend.model.node.TaskNode;
 import com.panorama.backend.model.resource.DefaultDataSource;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -28,6 +32,13 @@ public class ProcessUtil {
     static String sysLinkStr = (System.getProperties().getProperty("os.name").toLowerCase().contains("win"))? "/c":"-c";
     static String sysDeleteFileStr = (System.getProperties().getProperty("os.name").toLowerCase().contains("win"))? "del":"rm -f";
     static String sysDeleteDirectoryStr = (System.getProperties().getProperty("os.name").toLowerCase().contains("win"))? "rmdir /s /q":"rm -rf";
+    private static String pgBinPath = "";
+    private static volatile String lastProcessError = null;
+
+    @Value("${path.pgBin:}")
+    public void setPgBinPath(String pgBinPath) {
+        ProcessUtil.pgBinPath = pgBinPath == null ? "" : pgBinPath.trim();
+    }
 
     public static boolean shp2pgProcess(String shpPath, String tableName, DefaultDataSource defaultDataSource, int srid) throws IOException, InterruptedException {
         // 构建 ProcessBuilder
@@ -37,29 +48,51 @@ public class ProcessUtil {
         String dbHost = url.split("//")[1].split(":")[0];
         String dbName = url.substring(url.lastIndexOf("/") + 1);
 
+        String shp2pgsql = resolveExecutable("shp2pgsql");
+        String psql = resolveExecutable("psql");
+        if (!executableExists(shp2pgsql) || !executableExists(psql)) {
+            lastProcessError = "shp2pgsql/psql not found. Set path.pgBin to Postgres bin (e.g. E:\\Geo_database\\bin).";
+            log.error(lastProcessError);
+            return false;
+        }
+
         processBuilder.environment().put("PGPASSWORD", defaultDataSource.getPassword());
-        processBuilder.command(
-                sysCmdExeStr, sysLinkStr,
-                String.format(
-                        "shp2pgsql -I -s %s %s %s | psql -h %s -U %s -d %s"
-                        , srid, shpPath, tableName, dbHost, defaultDataSource.getUsername(), dbName
-                )
+        String command = String.format(
+                "%s -I -s %s %s %s | %s -h %s -U %s -d %s",
+                quote(shp2pgsql),
+                srid,
+                quote(shpPath),
+                quote(tableName),
+                quote(psql),
+                dbHost,
+                defaultDataSource.getUsername(),
+                dbName
         );
+        processBuilder.command(sysCmdExeStr, sysLinkStr, command);
+        processBuilder.redirectErrorStream(true);
 
         // 启动进程
         Process process = processBuilder.start();
 
+        StringBuilder output = new StringBuilder();
         // 读取命令行输出
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
             String line;
             while ((line = reader.readLine()) != null) {
+                output.append(line).append(System.lineSeparator());
                 log.info(line); // 输出命令行结果
             }
         }
 
         // 等待进程结束
         int exitCode = process.waitFor();
-        return exitCode == 0;
+        if (exitCode == 0) {
+            lastProcessError = null;
+            return true;
+        }
+        lastProcessError = String.format("shp2pgsql exit code %s. Output: %s", exitCode, output);
+        log.error(lastProcessError);
+        return false;
     }
 
     public static Process buildSystemProcess(TaskNode taskNode) {
@@ -107,5 +140,49 @@ public class ProcessUtil {
             log.error(e.getMessage());
             return null;
         }
+    }
+
+    public static String getLastProcessError() {
+        return lastProcessError;
+    }
+
+    private static String resolveExecutable(String name) {
+        String base = pgBinPath;
+        if (base == null || base.isBlank()) {
+            String env = System.getenv("PG_BIN");
+            if (env != null && !env.isBlank()) {
+                base = env.trim();
+            }
+        }
+        String exeName = isWindows() ? name + ".exe" : name;
+        if (base != null && !base.isBlank()) {
+            return Paths.get(base, exeName).toString();
+        }
+        return exeName;
+    }
+
+    private static boolean executableExists(String exePath) {
+        if (exePath == null || exePath.isBlank()) {
+            return false;
+        }
+        boolean looksLikePath = exePath.contains("\\") || exePath.contains("/") || exePath.contains(":");
+        if (!looksLikePath) {
+            return true;
+        }
+        return Files.exists(Paths.get(exePath));
+    }
+
+    private static String quote(String input) {
+        if (input == null || input.isBlank()) {
+            return "";
+        }
+        if (input.startsWith("\"") && input.endsWith("\"")) {
+            return input;
+        }
+        return "\"" + input + "\"";
+    }
+
+    private static boolean isWindows() {
+        return System.getProperties().getProperty("os.name").toLowerCase().contains("win");
     }
 }

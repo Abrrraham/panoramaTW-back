@@ -19,7 +19,10 @@ public interface VectorTileMapper {
 
     Map<String, Object> getDetailInfo(String tableName, int ogc_fid, String[] detailFieldsList);
 
-    void insertGeoJsonFeature(String tableName, String geometry, Map<String, Object> properties);
+    void insertGeoJsonFeature(@Param("tableName") String tableName,
+                              @Param("geometry") String geometry,
+                              @Param("properties") Map<String, Object> properties,
+                              @Param("srid") int srid);
 
     void createTable(String tableName, Map<String, Object> propertyType, String type, int srid);
 
@@ -29,7 +32,17 @@ public interface VectorTileMapper {
 
     int getSameCount(String tableName);
 
+    boolean hasPostgis();
+
+    String getLayerBBox(@Param("tableName") String tableName, @Param("srid") int srid);
+
     String getGeojsonByTableName(String tableName);
+
+    boolean hasColumn(@Param("tableName") String tableName, @Param("columnName") String columnName);
+
+    void renameGidToOgcFid(String tableName);
+
+    void renameIdToOgcFid(String tableName);
 
     // 新增：获取所有字段（不含geom）
     List<String> getAllColumns(String tableName);

@@ -22,7 +22,27 @@ public class AuthDataInitializer implements CommandLineRunner {
     @Override
     public void run(String... args) {
         userAccountRepo.findByUsername("admin").ifPresentOrElse(
-                user -> log.info("Admin account already exists"),
+                user -> {
+                    boolean changed = false;
+                    if (user.getRoles() == null || !user.getRoles().contains(Role.ROLE_ADMIN)) {
+                        user.setRoles(EnumSet.of(Role.ROLE_ADMIN));
+                        changed = true;
+                    }
+                    if (!user.isEnabled()) {
+                        user.setEnabled(true);
+                        changed = true;
+                    }
+                    if (user.getStatus() == null || !"1".equals(user.getStatus())) {
+                        user.setStatus("1");
+                        changed = true;
+                    }
+                    if (changed) {
+                        userAccountRepo.save(user);
+                        log.info("Admin account updated to ROLE_ADMIN and enabled.");
+                    } else {
+                        log.info("Admin account already exists");
+                    }
+                },
                 () -> {
                     UserAccount admin = UserAccount.builder()
                             .username("admin")
